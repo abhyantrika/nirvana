@@ -1,0 +1,33 @@
+ninja_required_version = 1.3
+cxx = /usr/bin/g++
+nvcc = /cvmfs/hpcsw.umd.edu/spack-software/2022.06.15/linux-rhel8-zen2/gcc-11.3.0/cuda-11.8.0-aw4bxsk6x5z5dokwabcms62ogkgi7icf/bin/nvcc
+
+cflags = -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/shishira/miniconda3/include -fPIC -O2 -isystem /home/shishira/miniconda3/include -fPIC -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include/TH -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include/THC -I/cvmfs/hpcsw.umd.edu/spack-software/2022.06.15/linux-rhel8-zen2/gcc-11.3.0/cuda-11.8.0-aw4bxsk6x5z5dokwabcms62ogkgi7icf/include -I/home/shishira/miniconda3/include/python3.11 -c
+post_cflags = -O3 -std=c++17 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=_gridencoder -D_GLIBCXX_USE_CXX11_ABI=0
+cuda_cflags = -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include/TH -I/home/shishira/miniconda3/lib/python3.11/site-packages/torch/include/THC -I/cvmfs/hpcsw.umd.edu/spack-software/2022.06.15/linux-rhel8-zen2/gcc-11.3.0/cuda-11.8.0-aw4bxsk6x5z5dokwabcms62ogkgi7icf/include -I/home/shishira/miniconda3/include/python3.11 -c
+cuda_post_cflags = -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options ''"'"'-fPIC'"'"'' -O3 -std=c++17 -U__CUDA_NO_HALF_OPERATORS__ -U__CUDA_NO_HALF_CONVERSIONS__ -U__CUDA_NO_HALF2_OPERATORS__ -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=_gridencoder -D_GLIBCXX_USE_CXX11_ABI=0 -gencode=arch=compute_80,code=compute_80 -gencode=arch=compute_80,code=sm_80 -ccbin /usr/bin/gcc
+cuda_dlink_post_cflags = 
+ldflags = 
+
+rule compile
+  command = $cxx -MMD -MF $out.d $cflags -c $in -o $out $post_cflags
+  depfile = $out.d
+  deps = gcc
+
+rule cuda_compile
+  depfile = $out.d
+  deps = gcc
+  command = $nvcc  $cuda_cflags -c $in -o $out $cuda_post_cflags
+
+
+
+
+
+build /scratch/zt1/project/abhinav2-prj/user/shishira/nirvanapp/models/gridencoder/build/temp.linux-x86_64-cpython-311/scratch/zt1/project/abhinav2-prj/user/shishira/nirvanapp/models/gridencoder/src/bindings.o: compile /scratch/zt1/project/abhinav2-prj/user/shishira/nirvanapp/models/gridencoder/src/bindings.cpp
+build /scratch/zt1/project/abhinav2-prj/user/shishira/nirvanapp/models/gridencoder/build/temp.linux-x86_64-cpython-311/scratch/zt1/project/abhinav2-prj/user/shishira/nirvanapp/models/gridencoder/src/gridencoder.o: cuda_compile /scratch/zt1/project/abhinav2-prj/user/shishira/nirvanapp/models/gridencoder/src/gridencoder.cu
+
+
+
+
+
+

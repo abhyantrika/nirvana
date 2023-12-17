@@ -1,0 +1,4 @@
+# ninja log v5
+2	21322	1688852679405510000	/fs/cfar-projects/frequency_stuff/snap/torch-ngp/gridencoder/build/temp.linux-x86_64-cpython-39/fs/cfar-projects/frequency_stuff/snap/torch-ngp/gridencoder/src/bindings.o	c87b848841ce32e7
+2	150828	1688852808895236000	/fs/cfar-projects/frequency_stuff/snap/torch-ngp/gridencoder/build/temp.linux-x86_64-cpython-39/fs/cfar-projects/frequency_stuff/snap/torch-ngp/gridencoder/src/gridencoder.o	cc832a56b8a42572
+2	21376	1688854062410518000	/fs/cfar-projects/frequency_stuff/snap/hyper_inr/models/gridencoder/build/temp.linux-x86_64-cpython-39/fs/cfar-projects/frequency_stuff/snap/hyper_inr/models/gridencoder/src/bindings.o	67a3b8bcffdbf45f
