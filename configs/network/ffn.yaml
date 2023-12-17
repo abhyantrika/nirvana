@@ -1,0 +1,59 @@
+model_name: 'ffn' # Model to use
+batch_size: ${..trainer.batch_size}
+layer_size: 128 # Layer sizes as list of ints
+num_layers: 3 # Number of layers
+dim_in: 2 # Input dimension
+final_act:  # final activation. Defaults to identity
+w0: 30.0 # w0 parameter for SIREN model.
+w0_initial: 30.0 # w0 parameter for first layer of SIREN model.
+activation: 'relu'
+use_bias: True
+
+pos_encoding:
+  type: 'fourier' #fourier, hash_grid, nerf
+
+  fourier_mapping_size: '${..layer_size}' #will equal layer_size
+  fourier_noise_scale: 10.0 #scale to multiply gaussian noise for fourier mapping. 10 performs best when lr is 1e-3
+
+  num_frequencies: #Num frequencies to encode using pos encoding. If None, we use Nyquist formula to calculate.
+  hash_grid_encoding: #enabled only if type is hash_grid
+    binarize: False
+    n_levels: 16
+    n_features_per_level: 2
+    log2_hashmap_size: 15
+    base_resolution: 16
+    finest_resolution: 512
+
+sidelength: #Max length of the image. updated in code
+
+# latent_network:
+#   type: 'vit' #vit,cnn
+#   layers: # Layer to use for latent network. Depth if using vit.
+#   heads: 4 # Number of heads for vit
+#   mlp_dim: 512 # MLP dimension for vit
+#   patch_size: 8
+#   random_latent: False #just use a random latent. 
+#   use_clip: False # Whether to use CLIP embeddings along with latent. 
+#   vae_mode: False  
+
+# lora_config:
+#   enabled: False
+#   rank: 16 
+
+# latent_dim: 512 #length of CLIP embeddings.
+
+
+# #coord_split: ${dataset.coord_split} # Whether to use split coord from https://arxiv.org/abs/2201.12425
+
+# hyper_net:
+#   layers:  # Layer to use for hypernet. Defaults to all layers. 
+#   num_layers: 1 # num layers for hypernet. Defaults to 1
+#   hidden_dim: 64 # hidden dim for hypernet. Defaults to 64
+#   type: 'mlp'
+#   output: 'weights'
+#   nl: 'leakyrelu'
+
+
+# weight_encoder:
+#   num_layers: 0 # num layers for weight encoder. Defaults to 0 -> no network
+#   hidden_dim: 64 # hidden dim for weight encoder. Defaults to 64

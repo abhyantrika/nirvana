@@ -1,0 +1,7 @@
+lottery:
+  enabled: False
+  keep_percentage: 0.5 # Percentage of weights to keep [0-1] range
+  num_rounds: 1 # Number of rounds to keep weights
+  late_reset_epoch: 0 # Epoch to reset weights
+  # Number of iterations to train for initial model. default is same as num_iters
+  #num_iters_initial: ${trainer.num_iters} #copies epochs from trainer

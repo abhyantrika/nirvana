@@ -1,0 +1,43 @@
+batch_size: 1
+group_size: 1
+min_psnr:  # Minimum PSNR to run for a model. If none, use iters
+max_iters:  # Maximum number of iterations to run even when min PSNR is not met
+num_iters: 1000
+num_iters_first:
+resume: False # Whether to resume from latest ckpt if available
+eval_every: 50 # Evaluate every n epochs
+max_frames: # Maximum number of frames to use. Defaults to all frames
+modulate: False # Whether to modulate the latent vector or not
+
+#copy from optimizer
+lr: ${optimizer.lr} # Learning rate 
+
+
+
+#Grad options.
+accumulate_grad_batches: 1 # Accumulate gradients over n batches
+
+#Misc options.
+eval_only: False # Whether to only evaluate the model or not
+quantize_eval: False # Whether to quantize and evaluate the model or not
+verbose: False # Whether to print verbose logs or not
+distributed: False # Whether to use distributed training or not
+viz: False # Whether to visualize the Umap and tsne plots or not
+progressive_training: False # Whether to use progressive training or not.
+debug: False # Whether to use debug mode or not
+num_workers: 4
+strategy: 'ddp' #'auto' 
+devices: 'auto'
+
+reset_best: False #Reset to best model at every iteration. 
+precision: 32
+
+#quant options
+quant_eval: True
+quant_levels: [4,8,12,16,20]
+
+#matmul
+tf_matmul_precision: "high"
+
+#quantization training. 
+qat: False

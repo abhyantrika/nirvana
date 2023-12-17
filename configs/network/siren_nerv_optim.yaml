@@ -1,0 +1,91 @@
+
+model_name: 'siren_nerv_optim' # Model to use
+batch_size: ${..trainer.batch_size}
+group_size: ${..trainer.group_size}
+layer_size: 512 # Layer sizes as list of ints
+num_layers: 3 # Number of layers
+dim_in: 2 # Input dimension
+final_act:  # final activation. Defaults to identity
+w0: 30.0 # w0 parameter for SIREN model.
+w0_initial: 30.0 # w0 parameter for first layer of SIREN model.
+activation: 'siren'
+use_bias: True
+use_conv_mlp: False
+
+#compression options. 
+single_prob_model: False # Use single probability model for every dimension of a single weight group
+symmetric_prob_model: False # Make probability model symmetric by construction
+residual_final_act: 'none' # final activation. Defaults to identity
+init_mode: 'prev' # Choose from ['prev', 'res', 'res_norm']
+res_coeff: 0.1 # Weight of residuals to add for next model state init
+prob_num_layers: 4 # Number of layers of probability model
+
+
+use_ac: True # Use torchac coding to obtain compressed model size
+use_lzma: True # Use lzma to compress difference of non entropy coded parameters
+use_prob_model: False # Use cdf from prob model instead of statistically calculated values
+use_diff_ac: True # Encode difference in quantizations framewise
+fit_linear: True # Whether to fit linear transform for weights before encoding difference
+encode_residuals: False # Whether to encode residuals of each frame
+log_ssim: False # Whether t
+
+decoder_cfg:
+  # Initialization type for weight decoders and weights. 
+  # For cifar networks, weight decoders initialized with identity matrix if init_type is not 'random'
+  # For imagenet networks, if init_type is 'var', boundary is calculated for each decoder and corresponding layer weight based on paper
+  init_type: 'random'
+  no_shift: False   # Disable shift parameter if true. Necessary for computational benefits in terms of slice sparsity for decoded weights
+  block_size: # Block size for weight matrix enforcing sparsity
+    default: [1,1] # Default value if not specified for any weight decoder group
+    layer1: [1,1]
+    layer: [1,1]
+  conv_dim: # Dimension of quantized weights for convolutions, set to -1 to be product of block size
+    default: -1
+    layer: -1
+    layer1: -1
+    layer2: -1
+    layer3: -1
+    layer4: -1
+    layer5: -1
+  decode_norm: 'min_max' # Type of normalization before decoding weights, choose from {'none', 'min_max', 'mean_std'}
+  decode_type: 'layer' # Grouping for weight decoders, choose from {'global', 'layer'}
+  decode_matrix: 'sq' # Type of matrix for decoding: choose from {'sq','dft','dft_fixed'}
+  num_hidden: 0 # Number of hidden layers, set to 0 for linear decoding
+  hidden_sizes: 12 # Size of hidden layers, if integer -> replicate across layers else use list of integers
+  nonlinearity: 'sine' # Choose from {'none','relu','sine','sigmoid','tanh'}
+  boundary: 3.0 # Boundary interval for uniformly initializing the quantized weights
+  boundary_first: 200.0 # Boundary interval for uniformly initializing the quantized weights of the first layer
+  unique_last: False # Whether to use unique decoder for last linear layer
+  unique_first: False # Whether to use unique decoder for first linear layer
+  compress_first: True # Whether to compress the first linear layer via quantization/decoding
+  std: 1.0 
+
+#Used only When using nerv block and patches:
+nerv_config: #used with patches. 
+  pre_nerv_pos_encoding: True #whether to use pos encoding within each group.
+  pos_enc_freq: 100
+  expand_ch: 16 #32
+  up_sample: 2
+
+pos_encoding:
+  type: null #fourier, hash_grid, nerf
+
+  fourier_mapping_size: '${..layer_size}' #will equal layer_size
+  fourier_noise_scale: 10.0 #scale to multiply gaussian noise for fourier mapping. 10 performs best when lr is 1e-3
+
+  #nerf pos encoding
+  num_frequencies: #Num frequencies to encode using pos encoding. If None, we use Nyquist formula to calculate.
+
+  #hashgrid options.
+  hash_grid_encoding: #enabled only if type is hash_grid
+    type: 'cuda'
+    binarize: False
+    n_levels: 16
+    n_features_per_level: 2
+    log2_hashmap_size: 10
+    base_resolution: 16
+    finest_resolution: null 
+    per_level_scale: 2.0 #used only when type is cuda
+    modulate_time_pos: False # Multiply hash grid by time pos encoding
+
+sidelength: #Max length of the image. updated in code

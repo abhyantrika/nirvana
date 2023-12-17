@@ -1,0 +1,38 @@
+# @package _global_
+
+defaults:
+  - override /network: hyper_inr
+
+network:
+  hyper_net:
+    hidden_dim: 128
+    layers: [1]
+    output_type: 'weights'
+    num_layers: 1
+    nl: 'tanh'
+  layer_size: 512
+  num_layers: 3
+  pos_encoding:
+    num_frequencies: 32
+    type: 'nerf'
+
+data:
+  data_path: '/fs/cfar-projects/frequency_stuff/vid_inr/frames/bunny/'
+  patch_shape: [32,32]
+
+trainer:
+  num_iters: 6
+  batch_size: 2
+  group_size: 2
+  eval_every: 2
+  lr: 1e-3
+  num_workers: 4
+  strategy: 'auto'
+  devices: [0]
+
+logging:
+  checkpoint:
+    logdir: 'output/temp/'
+  wandb:
+    enabled: False
+    group: 'nirvanapp'

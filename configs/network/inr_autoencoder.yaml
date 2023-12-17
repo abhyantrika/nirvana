@@ -1,0 +1,46 @@
+model_name: 'inr_autoencoder' # Model to use
+batch_size: ${..trainer.batch_size}
+
+encoder:
+  hidden_dims: [512, 512, 1024, 1024]
+  embedding_dim: 1024
+  input_dim: #based on the INR's hidden dim. Filled in code.
+
+#have another encoder for all positional features?
+pos_encoding_encoder: 
+  hidden_dims: [512, 512, 1024, 1024]
+  embedding_dim: 1024
+  input_dim: #if left empty, encoder won't be created. 
+
+
+decoder:
+  input_dim: 3
+  hidden_dim: 512
+  num_hidden_layers_before_skip: 2
+  num_hidden_layers_after_skip: 2
+  out_dim: 1
+
+
+
+w0: 30.0 # w0 parameter for SIREN model.
+w0_initial: 30.0 # w0 parameter for first layer of SIREN model.
+activation: 'relu'
+use_bias: True
+
+pos_encoding:
+  type: 'nerf' #fourier, hash_grid, nerf
+
+  fourier_mapping_size: 512 #'${..layer_size}' #will equal layer_size
+  fourier_noise_scale: 10.0 #scale to multiply gaussian noise for fourier mapping. 10 performs best when lr is 1e-3
+
+  num_frequencies: 64 #Num frequencies to encode using pos encoding. If None, we use Nyquist formula to calculate.
+  hash_grid_encoding: #enabled only if type is hash_grid
+    binarize: False
+    n_levels: 16
+    n_features_per_level: 2
+    log2_hashmap_size: 15
+    base_resolution: 16
+    finest_resolution: 512
+
+sidelength: #Max length of the image. updated in code
+

@@ -1,0 +1,9 @@
+# Wandb logging params
+wandb:
+  enabled: False   # Enable wandb logging
+  project: 'npp'   # Wandb project name
+  group: 'test'   # Wandb group name
+  dir: ${..checkpoint.logdir}    # Directory for saving wandb logged data
+  entity: 'abhyantrika'   # Wandb username
+  mode: 'online' # Whether to wandb sync online or keep offline
+  id: 

@@ -1,0 +1,40 @@
+dim_in: 2
+dim_out: 3
+data_path: '/fs/cfar-projects/frequency_stuff/vid_inr/frames/bunny/' # Path to image
+eval_path:  #only for generalization experiments.
+
+
+coord_normalize_range: [-1, 1]
+
+#patching:
+patch_shape:
+rep_pad: False #replication padding for patching. Else use constant padding
+
+coord_separate_norm: False # Whether to normalize x and y separately or not
+coord_split: False # Whether to use split coord from https://arxiv.org/abs/2201.12425
+dct: False 
+
+#grid mappings. In case we want to use grid coordinates. 
+coord_grid_mapping: False # coords will be in (N,2,H,W)
+
+#For input data.
+data_shape: #If none, will be in original shape. 
+
+data_format: "patch_first" #num patches first.
+
+image_shape: # Image size that comes out of dataloader. 
+features_shape: #Same as image shape. But different when we use patches. 
+
+data_range: [0,1]
+
+data_stride: 1 # Stride for sampling frames.
+
+num_frames: #used to sample frames from video. Else use all. 
+
+max_frames: #stop dataset after this many frames.
+
+shuffle: True
+ignore_pos_matrix: False
+
+init_path: # Path to same random init for the model.
+coord_batch_percent: 1.0 # Percentage of coord to load each batch.
