@@ -4,19 +4,15 @@ import torch.backends.cudnn as cudnn
 
 import os
 import random
-from pydoc import locate
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig,OmegaConf
 import numpy as np
 import copy
-import tqdm
 import wandb
 import warnings
 
-
-from utils import data_process,helper,schedulers
-from utils.state_tools import StateDictOperator
+from utils import helper
 from trainer import Trainer
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
@@ -92,12 +88,13 @@ def main(cfg: DictConfig):
         cfg.logging.wandb.enabled=False
 
     #log model config. USed to infer trained models. 
-    if not cfg.trainer.eval_only:
-        OmegaConf.save(cfg, cfg.logging.checkpoint.logdir+'/exp_config.yaml')
     
     trainer = Trainer(cfg)
+
+    if cfg.trainer.eval_only:
+        trainer.infer()
+        return
     trainer.train()
-    trainer.infer()
 
 
     if cfg.logging.wandb.enabled:

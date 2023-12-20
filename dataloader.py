@@ -65,7 +65,7 @@ class VideoFramesDataset(Dataset):
         self.video_dir = self.cfg.data.data_path
 
         if not os.path.isdir(self.video_dir):
-            self.video_dir = data_mapper[data_path]
+            self.video_dir = data_mapper[self.video_dir]
 
         self.transform = custom_transforms
         if self.transform is None:
@@ -100,6 +100,8 @@ class VideoFramesDataset(Dataset):
         return self.data_length
         
     def __getitem__(self, index):
+        #index is the group id.
+
         #make it a dict. 
         batch = {}
 
@@ -107,7 +109,10 @@ class VideoFramesDataset(Dataset):
         group_paths = []
         #load an entire group. 
         
-        for j in range(index, index + self.group_size):
+        group_indices = list(range(0,len(self.frame_paths)))
+        #divide into lists of size group_size
+        group_indices = [group_indices[i:i + self.group_size] for i in range(0, len(group_indices), self.group_size)]
+        for j in group_indices[index]:
             frame = Image.open(self.frame_paths[j]).convert('RGB')
 
             if self.transform is not None:
@@ -124,7 +129,7 @@ class VideoFramesDataset(Dataset):
         else:
             batch['features'] = torch.stack(group_feats, dim=0)
 
-        batch['frame_ids'] = torch.tensor(list(range(index, index + self.group_size)))
+        batch['frame_ids'] = torch.tensor(group_indices[index])  #torch.tensor(list(range(index, index + self.group_size)))
         batch['group_id'] = torch.tensor(index)
         batch['features_shape'] = torch.tensor(self.features_shape) #also data shape but can differ due to padding while patching.
         batch['paths'] = group_paths
@@ -159,195 +164,6 @@ def custom_collate_fn(batch):
         collated_batch['train_group_id'] = torch.tensor([item['train_group_id'] for item in batch]) if 'train_group_id' in batch[0] else None
 
     return collated_batch
-
-
-class LatentVideoDataset(Dataset):
-    def __init__(self, latent_array):
-        # Assuming latent_array is a NumPy array of shape (num_videos, sequence_length, latent_dim)
-        #self.latent_array = torch.tensor(latent_array, dtype=torch.float32)
-        self.latent_array = latent_array
-
-    def __len__(self):
-        return len(self.latent_array) - 1
-
-    def __getitem__(self, idx):
-        
-        return self.latent_array[idx], self.latent_array[idx + 1]
-        
-
-
-# class VideoFramesDataset_lmdb(Dataset):
-
-#     """
-#         Currently only supports non patch things
-#         And group size = 1
-#     """
-
-#     def __init__(self,cfg,data_path,val=False,batch_coords=False):
-
-#         if not os.path.isdir(data_path):
-#             data_path = data_mapper_zaratan[data_path]
-
-#         self.env = lmdb.open(data_path, readonly=True, lock=False, readahead=False, meminit=False)
-#         self.cfg = cfg
-#         self.val = val #validation
-#         self.batch_coords = batch_coords
-
-#         assert self.cfg.trainer.group_size == 1, 'Currently only supports group size = 1'
-
-#         # Get the length of dataset
-#         with self.env.begin(write=False) as txn:
-#             self.length = int(txn.get("length".encode()).decode())
-    
-#         if self.cfg.data.max_frames is not None:
-#             self.length = self.cfg.data.max_frames
-        
-#         self.num_frames = self.length
-
-#         if self.batch_coords:
-#             self.proc = data_process.DataProcessor(self.cfg.data,device='cpu') #dataloading on cpu
-
-#         self.coords = None
-#         self.coord_batch_percent = self.cfg.data.coord_batch_percent
-
-#         if val:
-#             self.coord_batch_percent = 1.0
-
-#     def __len__(self):
-#         return self.length
-    
-#     def __getitem__(self, index):
-#         with self.env.begin(write=False) as txn:
-#             # Fetch the batch and deserialize
-#             batch_serialized = txn.get(str(index).encode())
-#             batch = pickle.loads(batch_serialized)
-
-
-#         if self.batch_coords:
-#             if self.coords is None:
-#                 features_shape = batch['features_shape']
-#                 self.coords = self.proc.get_coordinates(data_shape=features_shape,patch_shape=self.cfg.data.patch_shape,\
-#                                                     split=self.cfg.data.coord_split,normalize_range=self.cfg.data.coord_normalize_range)
-#                 self.N = self.coords.shape[0]
-
-#             spatial_coord_idx = torch.randint(0,self.N,(int(self.N*self.coord_batch_percent),) )
-            
-#             if self.val:
-#                 spatial_coord_idx = torch.arange(self.N)
-
-#             batch['coords'] = self.coords[spatial_coord_idx]
-#             batch['spatial_coord_idx'] = spatial_coord_idx
-#             batch['features'] = batch['features'][:,spatial_coord_idx,:]
-
-#         return batch
-
-class VideoFramesDataset_lmdb(Dataset):
-
-    """
-        Currently only supports non patch things
-        And group size = 1
-    """
-
-    def __init__(self,cfg,data_path,val=False,batch_coords=False):
-
-        if not os.path.isdir(data_path):
-            data_path = data_mapper_zaratan_lmdb[data_path]
-        self.data_path = data_path
-
-        #self.env = lmdb.open(data_path, readonly=True, lock=False, readahead=False, meminit=False)
-        self.env = None
-        self.cfg = cfg
-        self.val = val #validation
-        self.batch_coords = batch_coords
-
-        assert self.cfg.trainer.group_size == 1, 'Currently only supports group size = 1'
-    
-        if self.cfg.data.max_frames is not None:
-            self.length = self.cfg.data.max_frames
-         
-        if self.batch_coords:
-            self.proc = data_process.DataProcessor(self.cfg.data,device='cpu') #dataloading on cpu
-
-        self.coords = None
-        self.coord_batch_percent = self.cfg.data.coord_batch_percent
-
-        if val:
-            self.coord_batch_percent = 1.0
-
-        #self.__post_init__()
-        print("hard coding frame length")
-        if 'shake' in data_path:
-            self.num_frames = self.length =  300
-        else:
-            self.num_frames = self.length =  600
-
-            
-    # def __post_init__(self) -> None:
-    #         with lmdb.open(str(self.data_path), max_dbs=1, readonly=True, lock=False) as env:
-    #             with env.begin() as txn:
-    #                 self.length = int(txn.get("length".encode()).decode())
-    #         self.num_frames = self.length
-    #         self.env = None
-        
-    def __len__(self):
-        return self.length
-    
-    def __open(self):
-        self.env = lmdb.open(str(self.data_path), readonly=True, lock=False)
-        
-    def __getitem__(self, index):
-
-        if self.env is None:
-            self.__open()
-        
-        with self.env.begin() as txn:
-            with txn.cursor() as cursor:
-                raw_data = cursor.get(str(index).encode())
-                batch = pickle.loads(raw_data)
-        
-        if self.batch_coords:
-            if self.coords is None:
-                features_shape = batch['features_shape']
-                self.coords = self.proc.get_coordinates(data_shape=features_shape,patch_shape=self.cfg.data.patch_shape,\
-                                                    split=self.cfg.data.coord_split,normalize_range=self.cfg.data.coord_normalize_range)
-                self.N = self.coords.shape[0]
-
-            spatial_coord_idx = torch.randint(0,self.N,(int(self.N*self.coord_batch_percent),) )
-            
-            if self.val:
-                spatial_coord_idx = torch.arange(self.N)
-
-            batch['coords'] = self.coords[spatial_coord_idx]
-            batch['spatial_coord_idx'] = spatial_coord_idx
-            batch['features'] = batch['features'][:,spatial_coord_idx,:]
-
-        return batch
-
-
-class SingleDataPointDataset(Dataset):
-    def __init__(self, data,iters=None):
-        self.data = data
-        self.iters = int(1e6) if iters is None else iters
-
-    def __len__(self):
-        # Arbitrarily large number, as we'll control iterations via max_steps
-        return self.iters
-
-    def __getitem__(self, idx):
-        return self.data
-
-if __name__ =='__main__':
-
-    cfg = {}
-    data_path = '/fs/cfar-projects/frequency_stuff/snap/nirvanapp/output/ucf101_reconstructions/reset_10/'
-    dataset = INRDataset(cfg,data_path=data_path)
-    
-
-    dl = DataLoader(dataset,batch_size=1,shuffle=False,num_workers=0)
-
-    breakpoint()
-    for batch in dl:
-        break
 
     
 

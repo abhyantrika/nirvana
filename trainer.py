@@ -7,8 +7,8 @@ import tqdm
 import copy
 import time
 import itertools
-import einops
-
+import glob
+from omegaconf import DictConfig,OmegaConf
 
 from utils import helper,metric,state_tools,dist_sampler,data_process
 import dataloader
@@ -60,6 +60,10 @@ class Trainer():
                                     save_dir=self.wandb_config.wandb_dir,entity=self.wandb_config.entity,id=wandb_id,resume=resume)
         else:
             self.logger = None
+
+
+    def save_config(self):
+        OmegaConf.save(self.cfg, self.cfg.logging.checkpoint.logdir+'/exp_config.yaml')
 
 
     def load_loss(self):
@@ -160,18 +164,20 @@ class Trainer():
 
         
         frame_ids = batch['frame_ids'].squeeze().tolist()
-        for i in frame_ids:
-            helper.save_tensor_img(best_prediction[i],filename=save_dir+'/pred_'+str(i)+'.png')
+
+        for i in range(len(frame_ids)):
+            name = str(frame_ids[i])
+            helper.save_tensor_img(best_prediction[i],filename=save_dir+'/pred_'+name+'.png')
 
     def train(self):
         encoding_time = 0
         for idx,batch in enumerate(self.dataloader):
-
+            #print(batch['group_id'],batch['frame_ids'])
             group_id = batch['group_id'].item()
             features_shape = batch['features_shape']
             input_image_shape = batch['og_data_shape'].tolist()
 
-            save_dir = self.save_root +'/'+ str(group_id) +'/'
+            save_dir = self.save_root +'/group_'+ str(group_id) +'/'
             helper.make_dir(save_dir)
             
             ckpt_path = helper.find_ckpt(save_dir)
@@ -186,9 +192,13 @@ class Trainer():
 
             if idx == 0:
                 iterations = self.cfg.trainer.num_iters_first if self.cfg.trainer.num_iters_first is not None else self.cfg.trainer.num_iters
+                self.cfg.data.image_shape = input_image_shape
+                self.cfg.data.features_shape = features_shape.tolist()
+                self.cfg.data.num_frames = self.dataset.num_frames
+                self.save_config()
 
             if idx > 0:
-                prev_dir_path = self.save_root +'/'+ str(group_id-1) +'/'
+                prev_dir_path = self.save_root +'/group_'+ str(group_id-1) +'/'
                 prev_ckpt_path = prev_dir_path + '/best_model.ckpt'
                 iterations = self.cfg.trainer.num_iters
                 #initialize model with previous model
@@ -214,7 +224,6 @@ class Trainer():
         best_psnr = 0        
         net_time = 0
         best_model_state = copy.deepcopy(self.model.state_dict())
-        #breakpoint()
 
         for i in iteration:
 
@@ -279,6 +288,62 @@ class Trainer():
         return best_model_state,best_opt_state,net_time,best_prediction
         
     def infer(self):
-        pass
+        
+        checkpoint_dir = self.cfg.logging.checkpoint.logdir
+        all_model_files = glob.glob(checkpoint_dir + '/*/*.ckpt')
+        all_model_files = [x for x in all_model_files if 'opt' not in x]
+        all_model_files = sorted(all_model_files)
+
+        if all_model_files == []:
+            print("No models found. Exiting.")
+            return
+
+        model_state_ops = {}
+        for idx,x in enumerate(all_model_files):
+            state = helper.load_pickle(x,compressed=True)
+            model_state_ops[idx] = state
+
+        
+
+        if self.coordinates is None:
+            features_shape = self.cfg.data.features_shape
+            self.proc = data_process.DataProcessor(self.cfg.data)
+            self.load_coordinates(features_shape)
+            self.coordinates = self.coordinates.to(self.device)
+        
+        total_time = 0
+        for group_idx,state in model_state_ops.items():
+            torch.cuda.synchronize()
+            start = time.time()
+            self.model.load_state_dict(state)
+            self.model.eval()
+            with torch.no_grad():
+
+                ## TODO : do this operation before. 
+                if self.compress:
+                    latents = self.model.get_latents()
+                    conf_decoder = self.cfg.network.decoder_cfg
+                    with torch.no_grad():
+                        if conf_decoder.decode_norm !='none':
+                            for group_name in sorted(self.model.unique_groups):
+                                if group_name == 'no_compress':
+                                    continue
+                                cur_weights = torch.round(latents[group_name])
+                                if conf_decoder.decode_norm == 'min_max':
+                                    decoder = self.model.weight_decoders[group_name]
+                                    decoder.div = torch.max(torch.abs(cur_weights.min(dim=0,keepdim=True)[0]),\
+                                                            torch.abs(cur_weights.max(dim=0,keepdim=True)[0]))
+                                elif conf_decoder.decode_norm == 'mean_std':
+                                    decoder = self.model.weight_decoders[group_name]
+                                    decoder.div = cur_weights.std(dim=0,keepdim=True)
+                                decoder.div[decoder.div==0] += 1
+
+                outputs = self.model(self.coordinates)
+            end = time.time()
+            torch.cuda.synchronize()
+            total_time += (end-start)
+
+        print("Total time: ",total_time)
+        print('FPS: ',self.cfg.data.num_frames/total_time)
 
 
