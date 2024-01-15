@@ -7,7 +7,7 @@ import tqdm
 import copy
 import time
 import itertools
-import glob
+import glob,os
 from omegaconf import DictConfig,OmegaConf
 
 from utils import helper,metric,state_tools,dist_sampler,data_process
@@ -159,15 +159,17 @@ class Trainer():
                                             normalize_range=self.cfg.data.coord_normalize_range)        
 
     def save_artefacts(self,best_model_state,best_opt_state,best_prediction,save_dir,batch):
-        helper.save_pickle(best_model_state,filename=save_dir+'/best_model.ckpt',compressed=True)
-        helper.save_pickle(best_opt_state,filename=save_dir+'/best_opt.ckpt',compressed=True)
 
-        
-        frame_ids = batch['frame_ids'].squeeze().tolist()
+        if not self.cfg.logging.checkpoint.skip_save_model:
+            helper.save_pickle(best_model_state,filename=save_dir+'/best_model.ckpt',compressed=True)
+            helper.save_pickle(best_opt_state,filename=save_dir+'/best_opt.ckpt',compressed=True)
 
-        for i in range(len(frame_ids)):
-            name = str(frame_ids[i])
-            helper.save_tensor_img(best_prediction[i],filename=save_dir+'/pred_'+name+'.png')
+        if not self.cfg.logging.checkpoint.skip_save:
+            frame_ids = batch['frame_ids'].squeeze().tolist()
+
+            for i in range(len(frame_ids)):
+                name = str(frame_ids[i])
+                helper.save_tensor_img(best_prediction[i],filename=save_dir+'/pred_'+name+'.png')
 
     def train(self):
         encoding_time = 0
@@ -202,7 +204,10 @@ class Trainer():
                 prev_ckpt_path = prev_dir_path + '/best_model.ckpt'
                 iterations = self.cfg.trainer.num_iters
                 #initialize model with previous model
-                prev_model_state = helper.load_pickle(prev_ckpt_path,compressed=True)
+                if os.path.exists(prev_ckpt_path):
+                    prev_model_state = helper.load_pickle(prev_ckpt_path,compressed=True)
+                else:
+                    prev_model_state = best_model_state
                 self.model.load_state_dict(prev_model_state)
                 
 

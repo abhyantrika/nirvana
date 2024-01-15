@@ -39,6 +39,14 @@ def main(cfg: DictConfig):
     cudnn.benchmark = True
     torch.set_float32_matmul_precision(cfg.trainer.tf_matmul_precision)
     
+    if cfg.trainer.distributed:
+        #torch.cuda.set_device(cfg.trainer.local_rank)
+        torch.distributed.init_process_group(backend='nccl')#, init_method='env://')
+        world_size = torch.distributed.get_world_size()
+        rank = torch.distributed.get_rank()
+    else:
+        rank = 0
+        world_size = 1
 
     #get overrides and merge.
     hydra_cfg = HydraConfig.get()
@@ -88,8 +96,7 @@ def main(cfg: DictConfig):
         cfg.logging.wandb.enabled=False
 
     #log model config. USed to infer trained models. 
-    
-    trainer = Trainer(cfg)
+    trainer = Trainer(cfg,local_rank=rank,world_size=world_size)
 
     if cfg.trainer.eval_only:
         trainer.infer()
