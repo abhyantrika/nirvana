@@ -1,5 +1,5 @@
 
-model_name: 'siren_nerv_optim' # Model to use
+model_name: 'siren_nerv' # Model to use
 batch_size: ${..trainer.batch_size}
 group_size: ${..trainer.group_size}
 layer_size: 512 # Layer sizes as list of ints

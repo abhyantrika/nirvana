@@ -6,9 +6,7 @@
 TODOS
 ---
 [ ] Optimized compression 
-
-[ ] Inference 
-
-[ ] Multi-GPU
+[X] Inference 
+[X] Multi-GPU
 
 

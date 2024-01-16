@@ -498,64 +498,6 @@ def load_tensor(img_path):
 
 
 
-def compute_ac_bytes(self, weights, use_diff_ac, use_prob_model, fit_linear):
-    ac_bytes = 0
-    overhead = []
-    with torch.no_grad():
-        for group_name in weights:
-            if group_name == 'no_compress':
-                continue
-            weight = torch.round(weights[group_name])
-            if use_diff_ac:
-                assert not use_prob_model, "Not implemented prob model for diff"
-                if fit_linear:
-                    X = torch.round(self.previous_latents[group_name])
-                    block_size = self.model.weight_decoders[group_name].block_size
-                    for m in self.model.modules():
-                        if isinstance(m, Linear):
-                            if self.model.groups[m.name] == group_name:
-                                out_features = m.out_features
-                                break
-                    X = rearrange(X, '(b c) (b1 c1) -> (b b1) (c c1)', b1=block_size[0], 
-                                        c1=block_size[1], b=out_features//block_size[0])
-                    X = torch.cat((X.unsqueeze(-1),torch.ones_like(X).unsqueeze(-1)),dim=-1)
-                    Y = weights[group_name]
-                    Y = rearrange(Y, '(b c) (b1 c1) -> (b b1) (c c1)', b1=block_size[0], 
-                                        c1=block_size[1], b=out_features//block_size[0]).unsqueeze(-1)
-                    try:
-                        out = torch.linalg.inv(torch.matmul(X.permute(0,2,1),X))
-                        out = torch.matmul(torch.matmul(out,X.permute(0,2,1)),Y)
-                        overhead += [out.detach().cpu()]
-                        pred_Y = torch.matmul(X,out)
-                        weight = torch.round(Y-pred_Y).reshape(weights[group_name].size())
-                    except Exception as e:
-                        weight = torch.round(weights[group_name]) - torch.round(self.previous_latents[group_name])
-                else:
-                    weight = weight - torch.round(self.previous_latents[group_name])
-            for dim in range(weight.size(1)):
-                weight_pos = weight[:,dim] - torch.min(weight[:,dim])
-                unique_vals, counts = torch.unique(weight[:,dim], return_counts = True)
-                if use_prob_model:
-                    unique_vals = torch.cat((torch.Tensor([unique_vals.min()-0.5]).to(unique_vals),\
-                                            (unique_vals[:-1]+unique_vals[1:])/2,
-                                            torch.Tensor([unique_vals.max()+0.5]).to(unique_vals)))
-                    cdf = self.model.prob_models[group_name](unique_vals,single_channel=dim)
-                    cdf = cdf.detach().cpu().unsqueeze(0).repeat(weight.size(0),1)
-                else:
-                    cdf = torch.cumsum(counts/counts.sum(),dim=0).detach().cpu()
-                    cdf = torch.cat((torch.Tensor([0.0]),cdf))
-                    cdf = cdf/cdf[-1]
-                    cdf = cdf.unsqueeze(0).repeat(weight.size(0),1)
-                weight_pos = weight_pos.long()
-                unique_vals = torch.unique(weight_pos)
-                mapping = torch.zeros((weight_pos.max().item()+1))
-                mapping[unique_vals] = torch.arange(unique_vals.size(0)).to(mapping)
-                weight_pos = mapping[weight_pos.cpu()]
-                byte_stream = self.torchac.encode_float_cdf(cdf.clamp(min=0.0,max=1.0).detach().cpu(), weight_pos.detach().cpu().to(torch.int16), \
-                                                check_input_bounds=True)
-                ac_bytes += len(byte_stream)
-    return ac_bytes+sum([torch.finfo(t.dtype).bits/8*t.numel() for t in overhead])
-
 
 def to_coordinates_and_features(img,ch_norm=False):
     """Converts an image to a set of coordinates and features.

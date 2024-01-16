@@ -7,9 +7,11 @@ import tqdm
 import copy
 import time
 import itertools
-import glob,os
+import glob,os,lzma
+from einops import rearrange
 from omegaconf import DictConfig,OmegaConf
 
+from models import layers
 from utils import helper,metric,state_tools,dist_sampler,data_process
 import dataloader
 
@@ -96,6 +98,7 @@ class Trainer():
             else:
                 loss_val = loss_func(outputs,batch['features'].squeeze()) * self.loss_weights[loss_name]
                 loss_dict[loss_name] = loss_val
+                num_bits = -1
 
         return loss_dict,num_bits
 
@@ -164,12 +167,74 @@ class Trainer():
             helper.save_pickle(best_model_state,filename=save_dir+'/best_model.ckpt',compressed=True)
             helper.save_pickle(best_opt_state,filename=save_dir+'/best_opt.ckpt',compressed=True)
 
+        if self.compress:
+            helper.save_pickle(self.byte_stream,filename=save_dir+'/compressed_state.pkl',compressed=True)
+
         if not self.cfg.logging.checkpoint.skip_save:
             frame_ids = batch['frame_ids'].squeeze().tolist()
 
             for i in range(len(frame_ids)):
                 name = str(frame_ids[i])
                 helper.save_tensor_img(best_prediction[i],filename=save_dir+'/pred_'+name+'.png')
+
+
+    def compute_ac_bytes(self,weights, use_diff_ac, use_prob_model, fit_linear):
+        ac_bytes = 0
+        overhead = []
+        with torch.no_grad():
+            for group_name in weights:
+                if group_name == 'no_compress':
+                    continue
+                weight = torch.round(weights[group_name])
+                if use_diff_ac:
+                    assert not use_prob_model, "Not implemented prob model for diff"
+                    if fit_linear:
+                        X = torch.round(self.previous_latents[group_name])
+                        block_size = self.model.weight_decoders[group_name].block_size
+                        for m in self.model.modules():
+                            if isinstance(m, layers.Linear):
+                                if self.model.groups[m.name] == group_name:
+                                    out_features = m.out_features
+                                    break
+                        X = rearrange(X, '(b c) (b1 c1) -> (b b1) (c c1)', b1=block_size[0], 
+                                            c1=block_size[1], b=out_features//block_size[0])
+                        X = torch.cat((X.unsqueeze(-1),torch.ones_like(X).unsqueeze(-1)),dim=-1)
+                        Y = weights[group_name]
+                        Y = rearrange(Y, '(b c) (b1 c1) -> (b b1) (c c1)', b1=block_size[0], 
+                                            c1=block_size[1], b=out_features//block_size[0]).unsqueeze(-1)
+                        try:
+                            out = torch.linalg.inv(torch.matmul(X.permute(0,2,1),X))
+                            out = torch.matmul(torch.matmul(out,X.permute(0,2,1)),Y)
+                            overhead += [out.detach().cpu()]
+                            pred_Y = torch.matmul(X,out)
+                            weight = torch.round(Y-pred_Y).reshape(weights[group_name].size())
+                        except Exception as e:
+                            weight = torch.round(weights[group_name]) - torch.round(self.previous_latents[group_name])
+                    else:
+                        weight = weight - torch.round(self.previous_latents[group_name])
+                for dim in range(weight.size(1)):
+                    weight_pos = weight[:,dim] - torch.min(weight[:,dim])
+                    unique_vals, counts = torch.unique(weight[:,dim], return_counts = True)
+                    if use_prob_model:
+                        unique_vals = torch.cat((torch.Tensor([unique_vals.min()-0.5]).to(unique_vals),\
+                                                (unique_vals[:-1]+unique_vals[1:])/2,
+                                                torch.Tensor([unique_vals.max()+0.5]).to(unique_vals)))
+                        cdf = self.model.prob_models[group_name](unique_vals,single_channel=dim)
+                        cdf = cdf.detach().cpu().unsqueeze(0).repeat(weight.size(0),1)
+                    else:
+                        cdf = torch.cumsum(counts/counts.sum(),dim=0).detach().cpu()
+                        cdf = torch.cat((torch.Tensor([0.0]),cdf))
+                        cdf = cdf/cdf[-1]
+                        cdf = cdf.unsqueeze(0).repeat(weight.size(0),1)
+                    weight_pos = weight_pos.long()
+                    unique_vals = torch.unique(weight_pos)
+                    mapping = torch.zeros((weight_pos.max().item()+1))
+                    mapping[unique_vals] = torch.arange(unique_vals.size(0)).to(mapping)
+                    weight_pos = mapping[weight_pos.cpu()]
+                    byte_stream = torchac.encode_float_cdf(cdf.clamp(min=0.0,max=1.0).detach().cpu(), weight_pos.detach().cpu().to(torch.int16), \
+                                                    check_input_bounds=True)
+                    ac_bytes += len(byte_stream)
+        return ac_bytes+sum([torch.finfo(t.dtype).bits/8*t.numel() for t in overhead]),byte_stream
 
     def train(self):
         encoding_time = 0
@@ -207,18 +272,48 @@ class Trainer():
                 if os.path.exists(prev_ckpt_path):
                     prev_model_state = helper.load_pickle(prev_ckpt_path,compressed=True)
                 else:
-                    prev_model_state = best_model_state
+                    prev_model_state = self.prev_best_model_state #best_model_state
                 self.model.load_state_dict(prev_model_state)
                 
 
             batch = {key: value.to(self.device) for key, value in batch.items() if type(value) is torch.Tensor}
-            
-            best_model_state,best_opt_state,net_time,best_prediction = self.train_loop(batch,iterations = iterations)
+            self.best_model_state,self.best_opt_state,net_time,best_prediction = self.train_loop(batch,iterations = iterations)
+
+            if self.compress:            
+                weights = self.model.get_latents()
+                ac_bytes_diff_emp,byte_stream_diff_emp = self.compute_ac_bytes(weights, True and idx>0, False, False)
+
+                if self.cfg.network.use_diff_ac:
+                    ac_bytes_emp,byte_stream_emp = self.compute_ac_bytes(weights, False, False, False)
+                    ac_bytes_prob,byte_stream_prob = self.compute_ac_bytes(weights, False, True, False)
+                    ac_bytes = min(min(ac_bytes_emp, ac_bytes_prob), ac_bytes_diff_emp)
+                    self.byte_stream = byte_stream_diff_emp if ac_bytes == ac_bytes_diff_emp else \
+                                    byte_stream_emp if ac_bytes == ac_bytes_emp else byte_stream_prob
+                    print(f'AC Kbytes Diff: {ac_bytes_diff_emp/1000}, Framewise: {ac_bytes_emp/1000}, Framewise Prob Model: {ac_bytes_prob/1000}')
+                else:
+                    ac_bytes = ac_bytes_diff_emp                
+                    self.byte_stream = byte_stream_diff_emp
+
+                with torch.no_grad():
+                    if self.cfg.network.init_mode == 'prev' or idx == 0:
+                        self.previous_latents = copy.deepcopy(weights)
+                        self.prev_best_model_state = copy.deepcopy(self.best_model_state)
+
+                    elif 'res' in self.cfg.network.init_mode:
+                        for group in weights:
+                            self.previous_latents[group] = weights[group]+self.cfg.network.res_coeff * (weights[group]-self.previous_latents[group])
+                            if 'norm' in self.cfg.network.init_mode:
+                                self.previous_latents[group] = self.previous_latents[group]*torch.norm(weights[group])/torch.norm(self.previous_latents[group])
+
+                        for k in self.best_model_state.keys():
+                            self.prev_best_model_state[k] = self.best_model_state[k] + self.cfg.network.res_coeff*(self.best_model_state[k]-self.prev_best_model_state[k])
+                            if 'norm' in self.cfg.network.init_mode:
+                                self.prev_best_model_state[k] = self.prev_best_model_state[k]*torch.norm(self.best_model_state[k])/torch.norm(self.prev_best_model_state[k])
             
             patch_shape = self.cfg.data.patch_shape
             H,W = features_shape[-2:]            
             best_prediction = self.proc.process_outputs(best_prediction,input_image_shape,features_shape,patch_shape=patch_shape,group_size=self.cfg.trainer.group_size)
-            self.save_artefacts(best_model_state,best_opt_state,best_prediction,save_dir,batch)
+            self.save_artefacts(self.best_model_state,self.best_opt_state,best_prediction,save_dir,batch)
             encoding_time += net_time
             
 
@@ -265,13 +360,18 @@ class Trainer():
             
             if self.compress:
                 loss_dict,num_bits = self.apply_loss(outputs,batch,latents)
+                prob_kbytes = num_bits/8000.
             else:
                 loss_dict,loss = self.apply_loss(outputs,batch)
+                prob_kbytes = -1
             
             loss = sum([loss_dict[k] for k in loss_dict.keys()])
             
             loss.backward()
             self.optimizer.step()
+
+            if self.compress:
+                self.prob_optimizer.step()
 
             psnr = helper.get_clamped_psnr(features,outputs)
 
@@ -286,7 +386,7 @@ class Trainer():
 
             net_time += (time.time()-start_iter)
 
-            log_dict = {'loss':loss.item(),'psnr':psnr.item(),'best_psnr':best_psnr.item(),'net_time':net_time}
+            log_dict = {'loss':loss.item(),'psnr':psnr.item(),'best_psnr':best_psnr.item(),'net_time':net_time,'prob_kbytes':prob_kbytes}
             iteration.set_postfix(**log_dict)
 
         print("Total encoding time: ",net_time)
